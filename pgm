@@ -1,0 +1,336 @@
+#!/usr/bin/env python
+""" pgm - process group manager
+
+pgm is used for managing simple groups of processes. Groups of processeses can 
+be started and stopped together. Individual processes are assigned simple names
+that can be used to view output, connect to stdio, or stop the process. When
+processes stop running, their output remains available for debugging until the
+processes is 'closed' using pgm. Processes are managed inside tmux sessions.
+
+For command examples, see README.
+
+
+Important TODO:
+    'pgm tmux' / 'pgm connect' should create a new session linked to the windows
+    of the pgm group session so that windows can be looked at without influencing
+    other pgm commands. We should probably be using link-windows for connect
+    and linked sessions for tmux?
+    http://unix.stackexchange.com/q/24274
+
+    See if we can prevent session windows from influening other sizes
+Features Wishlist:
+    Make Config files more useful by allowing them to be used to add commands
+     - pgm init mygroup --config mygroup.ini
+     - pgm add mygroup testproc --config mygroup.ini (gets definition from mygroup.ini)
+    Rebrand pgm 'sessions' as 'groups'
+    prefix pgm sessions with 'pgm-' to seperate them from regular tmux sessions
+    add an "order" value to help order the launching of processes from config files
+    Make python script equally useful as a library api
+"""
+import subprocess as sp
+import argparse
+import sys
+import ConfigParser, os
+import uuid
+
+
+TMUX = "tmux"
+
+TMUX_AGGRESSIVE_RESIZE = "setw -g aggressive-resize on"
+
+
+def run_cmd(cmd):
+    """ Run a command and return True or False """
+    try:
+        sp.check_call(cmd.split(), stdout=open('/dev/null'))
+        return True
+    except sp.CalledProcessError as e:
+            return False
+
+def tmux_has_session(session_name):
+    """ Checks to see if the tmux session exists """
+    # NOTE: This is the same as run_cmd, but it supresses stderr as well.
+    # Probably we should rewrite run_cmd() to be more flexible with its output?
+    try:
+        cmd = "%s has-session -t %s" % (TMUX, session_name)
+        sp.check_call(cmd.split(), stdout=open('/dev/null'), stderr=open('/dev/null'))
+        return True
+    except sp.CalledProcessError as e:
+            return False
+
+def check_session_exists(session_name):
+    """ Checks to make sure session exists, otherwise exits """
+    if not tmux_has_session(session_name):
+        print "Session '%s' does not exist. Run 'init' first to create it." % session_name
+        sys.exit(2)
+
+
+# def start_session(session_name):
+#     run_cmd("%s new-session -s %s -d" % (TMUX, session_name))
+#     run_cmd("%s set-option -t %s set-remain-on-exit on" % (TMUX, session_name))
+ 
+def end_session(session_name):
+    return run_cmd("%s kill-session -t %s" % (TMUX, session_name))
+    
+
+
+def list_running(session):
+    """ deprecated: left here as an exmaple for now """
+    fmtcmd = "#{window_index}\t#{window_name}\t#{pane_index}\t#{pane_pid}\t#{pane_start_command}"
+    output = sp.check_output([TMUX, 'list-windows', '-t', session, "-F", fmtcmd])
+    lines = output.split('\n')
+    for line in lines:
+        print line.split('\t')
+
+def __get_processes(session):
+    """ Returns list of tuples (name, cmd, pid) """
+    fmtcmd = "#{window_name}\t#{pane_start_command}\t#{pane_pid}"
+    output = sp.check_output([TMUX, 'list-windows', '-t', session, "-F", fmtcmd])
+    processes = [lines.split('\t') for lines in output.split('\n')]
+    return {x[0]:x[1:] for x in processes}
+        
+def kill_process(session, name):
+    processes = __get_processes(session)
+    if name not in processes.keys():
+        print "'%s' not found in session '%s'" % (name, session)
+        sys.exit(1)
+    try:
+        print "Killing Process"
+        sp.check_call(['kill',processes[name][1]])
+    except sp.CalledProcessError as e:
+        if e.returncode == 1: 
+            print "Unable to kill process: Already Terminated. Continuing"
+        else:
+            raise e
+    try:
+        print "Killing Window"
+        sp.check_call([TMUX, 'killw', '-t', name])
+    except sp.CalledProcessError as e:
+        raise e
+
+def tail(session, name):
+    processes = __get_processes(session)
+    if name not in processes.keys():
+        print "'%s' not found in session '%s'" % (name, session)
+        sys.exit(1)
+    # TODO: This does not seem to work properly. We want to figure out how to specify a set amount 
+    # to feed back. Right now it uses whatever the last client has set it to.
+#         sp.check_call([TMUX, 'resize-pane', '-t', "%s:%s" % (session, name), '-x', '120', '-y', '50'
+    output = sp.check_output([TMUX, 'capture-pane', '-t', "%s:%s" % (session, name), '-p'])
+    print output
+
+
+
+
+
+
+def parse_config(conf_file):
+    """ Each section specifies one command. Options are 
+    sudo: whether or not command needs run with privlidges (default: False)
+    enabled: Whether or not this command should be run (default: True)
+    cmd: The actual command to execute
+    """
+    config = ConfigParser.ConfigParser()
+    config.readfp(open(conf_file))
+    for section in config.sections():
+        # Skip is enabled is set to False
+        if config.has_option(section, 'enabled') and config.getboolean(section, 'enabled') == False:
+            print "Skipping disabled command '%s'" % section
+            continue
+        if not config.has_option(section, 'cmd'):
+            raise Exception("config file section '%s' has no 'cmd' defined" % section)
+        cmd = config.get(section, 'cmd')
+        sudocmd = False
+        if config.has_option(section, 'sudo') and config.getboolean(section, 'sudo'):
+            cmd = "sudo " + cmd
+            sudocmd = True
+            #TODO after command is started, use the send-keys command to send the password
+        run_in_new_window(section,cmd)
+
+def command_init(group_name, config=None):
+    """ initializes a new pgm session in tmux """
+    if tmux_has_session(group_name):
+        print "Group '%s' already exists. Aborting" % group_name
+        sys.exit(1)
+    run_cmd("%s new-session -s %s -d" % (TMUX, group_name))
+    run_cmd("%s set-option -t %s set-remain-on-exit on" % (TMUX, group_name))
+    if config:
+        print "Using config file '%s'" % config
+        parse_config(config)
+    sys.exit(0)
+
+def command_groups():
+    """ Lists all pgm tmux sessions """
+    try:
+        output = sp.check_output([TMUX, 'list-sessions', '-F', "#{session_name}"], stderr=open('/dev/null'))
+    except sp.CalledProcessError as e:
+        print "No groups found"
+    else:
+        output = output.strip().split("\n")
+        print "%d Groups:" % len(output)
+        for s in output:
+            print " %s" % s
+
+def command_list(group_name):
+    """ List commands from the pgm group """
+    check_session_exists(group_name)
+    fmtcmd = "#{window_name}\t#{pane_start_command}"
+    output = sp.check_output([TMUX, 'list-windows', '-t', group_name, "-F", fmtcmd])
+    output = output.strip().split("\n")
+    print "%d Processes" % len(output)
+    print "PGM Name\tCommand"
+    print output
+
+
+def run_in_new_window(name,cmd,prompt=False):
+    print "Running %s" % cmd
+    if not prompt:
+        try:
+            sp.check_call([TMUX, "new-window", "-n", name, cmd])
+            return True
+        except sp.CalledProcessError as e:
+            return False
+    else:
+        run_cmd("%s new-window -n %s" % (TMUX, name))
+        run_cmd("%s select-window -t %s " % (TMUX, name))
+        try:
+            sp.check_call([TMUX, "send-keys", cmd, "ENTER"])
+            return True
+        except sp.CalledProcessError as e:
+            return False
+
+def command_tmux(session_name):
+    """ Enters into the tmux session """
+    check_session_exists(session_name)
+    # Create grouped session with target. Allows this particular client to 
+    # change windows independently of other connections
+    tmp_session_name = uuid.uuid4()
+    cmd = "%s new-session -s %s -t %s" % (TMUX, tmp_session_name, session_name)
+    sp.call(cmd.split())
+    # Destroy temp session if user detached and left tmp session running. 
+    if tmux_has_session(tmp_session_name):
+        cmd = "%s kill-session -t %s" % (TMUX, tmp_session_name)
+        sp.call(cmd.split())
+    exit(0)
+
+
+
+
+
+
+def check_for_tmux(tmux_cmd):
+    """ Checks to see if the tmux command is present. Will cause the program to
+    exit early if it is not found. Will raise an exception if the command 
+    returns an error. """
+    try:
+        sp.check_call([tmux_cmd, '-V'], stdout=open('/dev/null'))
+    except OSError as e:
+        print "'%s' is either not installed, or is not on the path. Please install tmux." % tmux_cmd
+        sys.exit(1)
+    except sp.CalledProcessError as e:
+        print "There was a problem running '%s'" % tmux_cmd
+        raise e
+
+
+if __name__ == "__main__":
+    check_for_tmux(TMUX)
+
+    parser = argparse.ArgumentParser("pgm")
+    cmd_subparser = parser.add_subparsers(dest="cmd")
+
+    # Init command
+    cmd_init = cmd_subparser.add_parser("init", help="Starts a new process group")
+    cmd_init.add_argument("group", type=str, help="name of group")
+    cmd_init.add_argument("--config", type=str, default=None, help="Configuration file")
+
+    # Groups command
+    cmd_groups = cmd_subparser.add_parser("groups", help="Lists process groups")
+
+    # List Command
+    cmd_list = cmd_subparser.add_parser("list", help="Lists processes in group")
+    cmd_list.add_argument("group", type=str, help="group to list processes from")
+
+    # Add Command
+    cmd_add = cmd_subparser.add_parser("add", help="Add a process to a group")
+    cmd_add.add_argument("group", type=str, help="group name")
+    cmd_add.add_argument("name", type=str, help="name to assign process")
+    cmd_add.add_argument("--sudo", type=str, help="run the process as sudo")
+    cmd_add.add_argument("cmd", type=str, help="command to run")
+
+    # Connect Command
+    cmd_connect = cmd_subparser.add_parser("connect", help="Connects terminal to process")
+    cmd_connect.add_argument("group", type=str, help="group name")
+    cmd_connect.add_argument("process", type=str, help="process name")
+
+    # TMux Command
+    cmd_tmux = cmd_subparser.add_parser("tmux", help="Connects to the pgm group in tmux")
+    cmd_tmux.add_argument("group", type=str, help="group name")
+
+    # Tail Command
+    cmd_tail = cmd_subparser.add_parser("tail", help="get last output of command")
+    cmd_tail.add_argument("group", type=str, help="group name")
+    cmd_tail.add_argument("process", type=str, help="process name")
+
+    # Stop Command
+    cmd_stop = cmd_subparser.add_parser("stop", help="stops a running process")
+    cmd_stop.add_argument("group", type=str, help="group name")
+    cmd_stop.add_argument("--name", type=str, help="command name to kill")
+    cmd_stop.add_argument("--all", action="store_true", help="kills all commands")
+
+    # RM Command
+    cmd_rm = cmd_subparser.add_parser("rm", help="Removes an exited process")
+    cmd_rm.add_argument("group", type=str, help="group name")
+    cmd_rm.add_argument("process", type=str, help="process name")
+
+
+    args = parser.parse_args()
+#     session_exists = tmux_has_session(args.session)
+
+  
+    if args.cmd == 'init':
+        command_init(args.group, args.config)
+    elif args.cmd == "groups":
+        command_groups()
+    elif args.cmd == "list":
+        command_list(args.group)
+    elif args.cmd == "add":
+        run_in_new_window(args.command.split()[0], args.command)
+    elif args.cmd == "connect":
+        raise NotImplementedError()
+    elif args.cmd == "tmux":
+        command_tmux(args.group)
+    elif args.cmd == "tail":
+        raise NotImplementedError()
+    elif args.cmd == "stop":
+        raise NotImplementedError()
+    elif args.cmd == "rm":
+        raise NotImplementedError()
+
+    sys.exit(0)
+
+
+    # Original Pman code
+    if args.cmd == "init" and session_exists:
+        print "Session '%s' already exists. Aborting" % args.session
+        sys.exit(1)
+    elif args.cmd == "init" and not session_exists:
+        start_session(args.session)
+        if args.config:
+            print "Using config file '%s'" % args.config
+            parse_config(args.config)
+        sys.exit(0)
+    elif not session_exists:
+        print "Session '%s' does not exist. Run 'init' first to create it." % args.session
+        sys.exit(2)
+    if args.cmd == "run":
+        run_in_new_window(args.command.split()[0], args.command)
+        sys.exit(0)
+    elif args.cmd == "list":
+        list_processes(args.session)
+        sys.exit(0)
+    elif args.cmd == "kill":
+        if args.name:
+            kill_process(args.session, args.name)
+    elif args.cmd == "tail":
+        if args.name:
+            tail(args.session, args.name)
