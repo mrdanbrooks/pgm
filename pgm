@@ -182,6 +182,34 @@ def command_list(group_name):
     print "PGM Name\tCommand"
     print output
 
+def command_run(group_name, proc_name, command, sudo=False, shell=False):
+    check_session_exists(group_name)
+    print "Running %s" % command
+    if sudo:
+        print "using sudo"
+    if shell:
+        print "using shell"
+    # Get first available window index for the sessions
+    cmd = "%s list-windows -t %s -F #{window_index}" % (TMUX, group_name)
+    output = sp.check_output(cmd.split()).strip().split("\n")
+    index = None
+    for i in range(len(output)):
+        if not i == int(output[i]):
+            index = i
+            break
+    if not index:
+        index = len(output)
+    # Call Command
+    if not shell:
+        try:
+            cmd = "%s new-window -t %s:%d -n %s %s" % (TMUX, group_name, index, proc_name, command)
+            sp.check_call(cmd.split())
+            return True
+        except sp.CalledProcessError as e:
+            return False
+    else:
+        raise NotImplementedError()
+
 
 def run_in_new_window(name,cmd,prompt=False):
     print "Running %s" % cmd
@@ -200,13 +228,13 @@ def run_in_new_window(name,cmd,prompt=False):
         except sp.CalledProcessError as e:
             return False
 
-def command_tmux(session_name):
+def command_tmux(group_name):
     """ Enters into the tmux session """
-    check_session_exists(session_name)
+    check_session_exists(group_name)
     # Create grouped session with target. Allows this particular client to 
     # change windows independently of other connections
     tmp_session_name = uuid.uuid4()
-    cmd = "%s new-session -s %s -t %s" % (TMUX, tmp_session_name, session_name)
+    cmd = "%s new-session -s %s -t %s" % (TMUX, tmp_session_name, group_name)
     sp.call(cmd.split())
     # Destroy temp session if user detached and left tmp session running. 
     if tmux_has_session(tmp_session_name):
