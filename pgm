@@ -19,6 +19,7 @@ Important TODO:
 
     See if we can prevent session windows from influening other sizes
 Features Wishlist:
+    Allow the setting of shell variables?
     Make Config files more useful by allowing them to be used to add commands
      - pgm init mygroup --config mygroup.ini
      - pgm add mygroup testproc --config mygroup.ini (gets definition from mygroup.ini)
@@ -254,8 +255,9 @@ if __name__ == "__main__":
     cmd_add = cmd_subparser.add_parser("add", help="Add a process to a group")
     cmd_add.add_argument("group", type=str, help="group name")
     cmd_add.add_argument("name", type=str, help="name to assign process")
-    cmd_add.add_argument("--sudo", type=str, help="run the process as sudo")
-    cmd_add.add_argument("cmd", type=str, help="command to run")
+    cmd_add.add_argument("--sudo", action="store_true", help="run the process as sudo")
+    cmd_add.add_argument("--shell", action="store_true", help="run the command in a shell")
+    cmd_add.add_argument("command", type=str, help="command to run")
 
     # Connect Command
     cmd_connect = cmd_subparser.add_parser("connect", help="Connects terminal to process")
@@ -294,7 +296,8 @@ if __name__ == "__main__":
     elif args.cmd == "list":
         command_list(args.group)
     elif args.cmd == "add":
-        run_in_new_window(args.command.split()[0], args.command)
+        command_run(args.group, args.name, args.command, args.sudo, args.shell)
+#         run_in_new_window(args.command.split()[0], args.command)
     elif args.cmd == "connect":
         raise NotImplementedError()
     elif args.cmd == "tmux":
