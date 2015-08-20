@@ -243,6 +243,22 @@ def command_tmux(group_name):
     exit(0)
 
 
+def command_rm(group_name, proc_name):
+    """ Kills a tmux window with a process inside it """
+    # TODO: Don't allow rm of running process
+    check_session_exists(group_name)
+    # Get list of tmux window names and associated indexes
+    cmd = "%s list-windows -t %s -F #{window_name}^^#{window_index}" % (TMUX, group_name)
+    output = sp.check_output(cmd.split()).strip().split("\n")
+    # Turn list into dictionary of name:index
+    output = [l.split("^^") for l in output]
+    proc_indexes = {l[0]: l[1] for l in output}
+    if proc_name not in proc_indexes.keys():
+        print "Process '%s' not found in group '%s'" % (proc_name, group_name)
+        exit(1)
+    cmd = "%s kill-window -t %s:%s" % (TMUX, group_name, proc_indexes[proc_name])
+    run_cmd(cmd)
+    exit(0)
 
 
 
@@ -335,7 +351,7 @@ if __name__ == "__main__":
     elif args.cmd == "stop":
         raise NotImplementedError()
     elif args.cmd == "rm":
-        raise NotImplementedError()
+        command_rm(args.group, args.process)
 
     sys.exit(0)
 
