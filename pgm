@@ -41,8 +41,6 @@ import time
 
 TMUX = "tmux"
 
-TMUX_AGGRESSIVE_RESIZE = "setw -g aggressive-resize on"
-
 #TODO: We should make the session that holds all the windows execute "True" or something for the 
 # index 0, and make index 0 hang around all the time so the session does not dissappear even if 
 # all the other windows in it have been removed. 
@@ -266,6 +264,10 @@ def command_run(group_name, proc_name, command, sudo=False, shell=False, dirpath
             return False
     else:
         raise NotImplementedError()
+
+    # Set window parameters. Specifically:
+    # aggressive-resize on: This allows windows to immediately change size when unconstrained
+    run_cmd("%s setw -t %s:%d -g aggressive-resize on" % (TMUX, group_name, index))
 
     if sudo:
         # Before we can send the password, we need to make sure tmux has had a
