@@ -31,8 +31,11 @@ Features Wishlist:
 import subprocess as sp
 import argparse
 import sys
+import re
 import ConfigParser, os
 import uuid
+import getpass
+import time
 
 
 TMUX = "tmux"
@@ -183,12 +186,27 @@ def command_list(group_name):
     print output
 
 def command_run(group_name, proc_name, command, sudo=False, shell=False):
+    """ """
+    # SUDO: We will manually append the sudo command to the command the user passed in.
+    # This is necessary as the normal 'sudo' is not really sufficient to reliably 
+    # run the command. First, normally sudo has a timeout period during which you
+    # don't need to re-enter the password. This makes it non-deterministic whether
+    # or not we need to send the password to sudo. Second, we want sudo to read
+    # from stdin. Normally sudo reads from the terminal program, but we use tmux's
+    # 'send-keys' command to send the password through stdin. 
     check_session_exists(group_name)
-    print "Running %s" % command
-    if sudo:
-        print "using sudo"
+    # TODO: Check if the name already exists
     if shell:
         print "using shell"
+
+
+    # Check name is not is use already
+    cmd = "%s list-windows -t %s -F #{window_name}" % (TMUX, group_name)
+    output = sp.check_output(cmd.split()).strip().split("\n")
+    if proc_name in output:
+        print "Process name '%s' is already used in group '%s'" % (proc_name, group_name)
+        exit(1)
+
     # Get first available window index for the sessions
     cmd = "%s list-windows -t %s -F #{window_index}" % (TMUX, group_name)
     output = sp.check_output(cmd.split()).strip().split("\n")
@@ -199,16 +217,49 @@ def command_run(group_name, proc_name, command, sudo=False, shell=False):
             break
     if not index:
         index = len(output)
-    # Call Command
+    
+    # Modify the given command if we are running as sudo. -k clears the timeout. -S reads from stdin
+    # Also, grab the password now so that if it is fumbled, we have not already executed the command.
+    if sudo:
+        if re.match("^sudo", command, re.IGNORECASE):
+            print "Please use the --sudo switch in place of including the word 'sudo' in your command"
+            exit(1)
+        command = "sudo -k; sudo -S " + command
+        # Get the password for sudo
+        passwd = getpass.getpass()
+        if not passwd == getpass.getpass(prompt="Confirm:"):
+            print "Passwords do not match. Aborting."
+            exit(1)
+
+    print "Running '%s'" % command
+    # Call Command. The command needs to be sent as a single parameter so tmux receives the entire
+    # thing. Otherwise, python subprocess may attempt to process it as multiple commands
     if not shell:
         try:
-            cmd = "%s new-window -t %s:%d -n %s %s" % (TMUX, group_name, index, proc_name, command)
-            sp.check_call(cmd.split())
-            return True
+            cmd = "%s new-window -t %s:%d -n %s" % (TMUX, group_name, index, proc_name)
+            sp.check_call(cmd.split() + [command]) 
         except sp.CalledProcessError as e:
             return False
     else:
         raise NotImplementedError()
+
+    if sudo:
+        # Before we can send the password, we need to make sure tmux has had a
+        # chance to execute the commands and be waiting at the prompt. This seems
+        # to do the trick... but a better way would be nice just in case the 
+        # 'sudo -k' gets run the 'sudo -S ...' has not yet.
+        cmd = "%s list-windows -t %s -F #{window_name}" % (TMUX, group_name)
+        while proc_name not in sp.check_output(cmd.split()).strip().split("\n"):
+            print "waiting"
+            time.sleep(1)
+        # Pass the password to the sudo command. Make sure it is sent as a single parameter
+        # Then, seperately send the enter key after it.
+        cmd = "%s send-keys -t %s:%d -l" % (TMUX, group_name, index)
+        sp.check_call(cmd.split() + [passwd])
+        cmd = "%s send-keys -t %s:%d Enter" %(TMUX, group_name, index)
+        run_cmd(cmd)
+
+    return True
 
 
 def run_in_new_window(name,cmd,prompt=False):
