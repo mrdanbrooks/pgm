@@ -30,6 +30,7 @@ Features Wishlist:
 """
 import subprocess as sp
 import argparse
+import os
 import sys
 import re
 import ConfigParser, os
@@ -42,6 +43,9 @@ TMUX = "tmux"
 
 TMUX_AGGRESSIVE_RESIZE = "setw -g aggressive-resize on"
 
+#TODO: We should make the session that holds all the windows execute "True" or something for the 
+# index 0, and make index 0 hang around all the time so the session does not dissappear even if 
+# all the other windows in it have been removed. 
 
 def run_cmd(cmd):
     """ Run a command and return True or False """
@@ -67,6 +71,15 @@ def check_session_exists(session_name):
     if not tmux_has_session(session_name):
         print "Session '%s' does not exist. Run 'init' first to create it." % session_name
         sys.exit(2)
+
+def get_sudo_password():
+    """ Asks for the user password. Twice. Throws exception if they don't match. """
+    passwd = getpass.getpass()
+    if not passwd == getpass.getpass(prompt="Confirm:"):
+        raise AssertionError()
+    return passwd
+
+
 
 
 # def start_session(session_name):
@@ -185,8 +198,11 @@ def command_list(group_name):
     print "PGM Name\tCommand"
     print output
 
-def command_run(group_name, proc_name, command, sudo=False, shell=False):
+def command_run(group_name, proc_name, command, sudo=False, shell=False, dirpath=None):
     """ """
+    # TODO: We need to make sure that windows resize aggressively, and don't automatically
+    # go away when the process dies.
+
     # SUDO: We will manually append the sudo command to the command the user passed in.
     # This is necessary as the normal 'sudo' is not really sufficient to reliably 
     # run the command. First, normally sudo has a timeout period during which you
@@ -195,10 +211,8 @@ def command_run(group_name, proc_name, command, sudo=False, shell=False):
     # from stdin. Normally sudo reads from the terminal program, but we use tmux's
     # 'send-keys' command to send the password through stdin. 
     check_session_exists(group_name)
-    # TODO: Check if the name already exists
     if shell:
         print "using shell"
-
 
     # Check name is not is use already
     cmd = "%s list-windows -t %s -F #{window_name}" % (TMUX, group_name)
@@ -217,6 +231,13 @@ def command_run(group_name, proc_name, command, sudo=False, shell=False):
             break
     if not index:
         index = len(output)
+
+    # Change directory if necessary. Remember where we are so that we can come back.
+    # This is necessary for if we are executing multiple calls in a row.
+    if dirpath:
+        print "Changing directory to ", dirpath
+        runpath = os.getcwd()
+        os.chdir(os.path.normpath(os.path.expanduser(dirpath)))
     
     # Modify the given command if we are running as sudo. -k clears the timeout. -S reads from stdin
     # Also, grab the password now so that if it is fumbled, we have not already executed the command.
@@ -226,8 +247,9 @@ def command_run(group_name, proc_name, command, sudo=False, shell=False):
             exit(1)
         command = "sudo -k; sudo -S " + command
         # Get the password for sudo
-        passwd = getpass.getpass()
-        if not passwd == getpass.getpass(prompt="Confirm:"):
+        try:
+            passwd = get_sudo_password()
+        except AssertionError:
             print "Passwords do not match. Aborting."
             exit(1)
 
@@ -239,6 +261,8 @@ def command_run(group_name, proc_name, command, sudo=False, shell=False):
             cmd = "%s new-window -t %s:%d -n %s" % (TMUX, group_name, index, proc_name)
             sp.check_call(cmd.split() + [command]) 
         except sp.CalledProcessError as e:
+            # TODO: Probably this should throw an error? Probably I should make
+            # some specific errors?
             return False
     else:
         raise NotImplementedError()
@@ -258,6 +282,10 @@ def command_run(group_name, proc_name, command, sudo=False, shell=False):
         sp.check_call(cmd.split() + [passwd])
         cmd = "%s send-keys -t %s:%d Enter" %(TMUX, group_name, index)
         run_cmd(cmd)
+
+    if dirpath:
+        print "Changing dir back to ", runpath
+        os.chdir(runpath)
 
     return True
 
@@ -351,8 +379,9 @@ if __name__ == "__main__":
     cmd_add.add_argument("group", type=str, help="group name")
     cmd_add.add_argument("name", type=str, help="name to assign process")
     cmd_add.add_argument("--sudo", action="store_true", help="run the process as sudo")
+    cmd_add.add_argument("--dir", type=str, default=None, help="directory path from which to execute the command")
     cmd_add.add_argument("--shell", action="store_true", help="run the command in a shell")
-    cmd_add.add_argument("command", type=str, help="command to run")
+    cmd_add.add_argument("command", type=str, nargs=argparse.REMAINDER, help="command to run")
 
     # Connect Command
     cmd_connect = cmd_subparser.add_parser("connect", help="Connects terminal to process")
@@ -391,8 +420,7 @@ if __name__ == "__main__":
     elif args.cmd == "list":
         command_list(args.group)
     elif args.cmd == "add":
-        command_run(args.group, args.name, args.command, args.sudo, args.shell)
-#         run_in_new_window(args.command.split()[0], args.command)
+        command_run(args.group, args.name, " ".join(args.command), args.sudo, args.shell, args.dir)
     elif args.cmd == "connect":
         raise NotImplementedError()
     elif args.cmd == "tmux":
