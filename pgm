@@ -183,8 +183,8 @@ def command_init(group_name, config=None):
         print "Using config file '%s'" % config
         commands = parse_config(config)
         # see if we need sudo for anything
+        sudopasswd = None
         if (True, True) in [(c.sudo, c.enabled) for c in commands.values()]:
-            sudopasswd = None
             try:
                 sudopasswd = get_sudo_password()
             except AssertionError:
@@ -200,7 +200,12 @@ def command_init(group_name, config=None):
             if not command.enabled:
                 print "Skipping disabled command '%s'" % command.name
             else:
-                command_run(group_name, command.name, command.command, command.sudo, command.shell, command.cmddir, sudopasswd=sudopasswd)
+                try:
+                    command_run(group_name, command.name, command.command, command.sudo, command.shell, command.cmddir, sudopasswd=sudopasswd)
+                except Exception as e:
+                    print "Exception while executing command '%s':" % command.name
+                    print e
+                    print e.message
     sys.exit(0)
 
 def command_groups():
@@ -218,12 +223,14 @@ def command_groups():
 def command_list(group_name):
     """ List commands from the pgm group """
     check_session_exists(group_name)
-    fmtcmd = "#{window_name}\t#{pane_start_command}"
+    fmtcmd = "#{window_name}\t#{pane_start_command}\t#{pane_dead}"
     output = sp.check_output([TMUX, 'list-windows', '-t', group_name, "-F", fmtcmd])
     output = output.strip().split("\n")
     print "%d Processes" % len(output)
-    print "PGM Name\tCommand"
-    print output
+    print "%-16s%-16s%s" % ("PGM Name", "Status", "Command")
+    for line in output:
+        name, cmd, running = line.split("\t")
+        print "%-16s%-16s%s" % (name, "Running" if running else "Dead", cmd)
 
 def command_run(group_name, proc_name, command, sudo=False, shell=False, dirpath=None, sudopasswd=None):
     """ """
@@ -332,23 +339,6 @@ def command_run(group_name, proc_name, command, sudo=False, shell=False, dirpath
 
     return True
 
-
-def run_in_new_window(name,cmd,prompt=False):
-    print "Running %s" % cmd
-    if not prompt:
-        try:
-            sp.check_call([TMUX, "new-window", "-n", name, cmd])
-            return True
-        except sp.CalledProcessError as e:
-            return False
-    else:
-        run_cmd("%s new-window -n %s" % (TMUX, name))
-        run_cmd("%s select-window -t %s " % (TMUX, name))
-        try:
-            sp.check_call([TMUX, "send-keys", cmd, "ENTER"])
-            return True
-        except sp.CalledProcessError as e:
-            return False
 
 def command_tmux(group_name):
     """ Enters into the tmux session """
