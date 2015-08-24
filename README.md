@@ -29,6 +29,10 @@ Add a sudo process to the session 'mine'
 	Adding process 'iftop' to 'mine' using: sudo iftop -i eth0
 	[sudo] password for csrobot: 
 
+Add a process 'syslog' to the session 'mine' using command from conf file
+    $ pgm add mine syslog --config myconfig.ini
+	Adding process 'syslog' to 'mine' using: tail -f /var/log/syslog	
+
 Connect to process stdio
 	$ pgm connect mine top
 	(opens tmux session to that process)

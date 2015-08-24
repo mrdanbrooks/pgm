@@ -393,7 +393,7 @@ if __name__ == "__main__":
     check_for_tmux(TMUX)
 
     parser = argparse.ArgumentParser("pgm")
-    cmd_subparser = parser.add_subparsers(dest="cmd")
+    cmd_subparser = parser.add_subparsers(dest="command")
 
     # Init command
     cmd_init = cmd_subparser.add_parser("init", help="Starts a new process group")
@@ -408,13 +408,16 @@ if __name__ == "__main__":
     cmd_list.add_argument("group", type=str, help="group to list processes from")
 
     # Add Command
-    cmd_add = cmd_subparser.add_parser("add", help="Add a process to a group")
+    cmd_add_epilog = "Either --config or --cmd must be used to specify the command to be run."
+    cmd_add_epilog += " When --config is used, the --sudo, --dir, and --shell arguments are ignored."
+    cmd_add = cmd_subparser.add_parser("add", help="Add a process to a group", epilog=cmd_add_epilog)
     cmd_add.add_argument("group", type=str, help="group name")
     cmd_add.add_argument("name", type=str, help="name to assign process")
     cmd_add.add_argument("--sudo", action="store_true", help="run the process as sudo")
     cmd_add.add_argument("--dir", type=str, default=None, help="directory path from which to execute the command")
     cmd_add.add_argument("--shell", action="store_true", help="run the command in a shell")
-    cmd_add.add_argument("command", type=str, nargs=argparse.REMAINDER, help="command to run")
+    cmd_add.add_argument("--config", type=str, help="Find command in specified config file")
+    cmd_add.add_argument("--cmd", type=str, nargs=argparse.REMAINDER, help="command to run")
 
     # Connect Command
     cmd_connect = cmd_subparser.add_parser("connect", help="Connects terminal to process")
@@ -446,13 +449,13 @@ if __name__ == "__main__":
 #     session_exists = tmux_has_session(args.session)
 
   
-    if args.cmd == 'init':
+    if args.command == 'init':
         command_init(args.group, args.config)
-    elif args.cmd == "groups":
+    elif args.command == "groups":
         command_groups()
-    elif args.cmd == "list":
+    elif args.command == "list":
         command_list(args.group)
-    elif args.cmd == "add":
+    elif args.command == "add":
         if args.sudo:
             try:
                 sudopasswd = get_sudo_password()
@@ -461,16 +464,26 @@ if __name__ == "__main__":
                 exit(1)
         else:
             sudopasswd = None
-        command_run(args.group, args.name, " ".join(args.command), args.sudo, args.shell, args.dir, sudopasswd=sudopasswd)
-    elif args.cmd == "connect":
+        if args.config and not args.cmd:
+            command_list = parse_config(args.config)
+            if args.name not in command_list.keys():
+                print "Command '%s' not found in config file" % args.name
+                exit(1)
+            c = command_list[args.name]
+            command_run(args.group, args.name, c.command, c.sudo, c.shell, c.cmddir, sudopasswd)
+        elif args.cmd and not args.config:
+            command_run(args.group, args.name, " ".join(args.cmd), args.sudo, args.shell, args.dir, sudopasswd=sudopasswd)
+        else:
+            cmd_add.print_help()
+    elif args.command == "connect":
         raise NotImplementedError()
-    elif args.cmd == "tmux":
+    elif args.command == "tmux":
         command_tmux(args.group)
-    elif args.cmd == "tail":
+    elif args.command == "tail":
         raise NotImplementedError()
-    elif args.cmd == "stop":
+    elif args.command == "stop":
         raise NotImplementedError()
-    elif args.cmd == "rm":
+    elif args.command == "rm":
         command_rm(args.group, args.process)
 
     sys.exit(0)
