@@ -355,6 +355,25 @@ def command_tmux(group_name):
     exit(0)
 
 
+def command_connect(group_name, proc_name):
+    """ Creates a tmux session connected to a single process """
+    check_session_exists(group_name)
+    tmp_session_name = uuid.uuid4()
+    run_cmd("%s new-session -s %s -d" % (TMUX, tmp_session_name))
+    run_cmd("%s link-window -s %s:%s -t %s:0 -k" % (TMUX, group_name, proc_name, tmp_session_name))
+    run_cmd("%s set-option -t %s status off" % (TMUX, tmp_session_name))
+    print "Press 'ctrl-b d' to exit connection. Press Enter to continue."
+    raw_input()
+    cmd = "%s attach -t %s" % (TMUX, tmp_session_name)
+    sp.call(cmd.split())
+    # Destroy temp session if user detached and left tmp session running. 
+    if tmux_has_session(tmp_session_name):
+        cmd = "%s kill-session -t %s" % (TMUX, tmp_session_name)
+        sp.call(cmd.split())
+    exit(0)
+
+
+
 def command_rm(group_name, proc_name):
     """ Kills a tmux window with a process inside it """
     # TODO: Don't allow rm of running process
@@ -476,7 +495,7 @@ if __name__ == "__main__":
         else:
             cmd_add.print_help()
     elif args.command == "connect":
-        raise NotImplementedError()
+        command_connect(args.group, args.process)
     elif args.command == "tmux":
         command_tmux(args.group)
     elif args.command == "tail":
