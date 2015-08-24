@@ -358,6 +358,9 @@ def command_tmux(group_name):
 def command_connect(group_name, proc_name):
     """ Creates a tmux session connected to a single process """
     check_session_exists(group_name)
+    # We first create a new background tmux session with a default window.
+    # Next we link the target process window to the established default window,
+    # killing it in the process. Finally, we remove the status bar so it looks good.
     tmp_session_name = uuid.uuid4()
     run_cmd("%s new-session -s %s -d" % (TMUX, tmp_session_name))
     run_cmd("%s link-window -s %s:%s -t %s:0 -k" % (TMUX, group_name, proc_name, tmp_session_name))
@@ -365,6 +368,7 @@ def command_connect(group_name, proc_name):
     print "Press 'ctrl-b d' to exit connection. Press Enter to continue."
     raw_input()
     cmd = "%s attach -t %s" % (TMUX, tmp_session_name)
+    # Connect the user to the session. This blocks until the user exists.
     sp.call(cmd.split())
     # Destroy temp session if user detached and left tmp session running. 
     if tmux_has_session(tmp_session_name):
