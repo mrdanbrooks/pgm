@@ -435,11 +435,6 @@ if __name__ == "__main__":
     cmd_tmux = cmd_subparser.add_parser("tmux", help="Connects to the pgm group as tmux session")
     cmd_tmux.add_argument("group", type=str, help="group name")
 
-    # Stdio Command
-    cmd_stdio = cmd_subparser.add_parser("stdio", help="Connects to single processes stdio")
-    cmd_stdio.add_argument("group", type=str, help="group name")
-    cmd_stdio.add_argument("process", type=str, help="process name")
-
     # Tail Command
     cmd_tail = cmd_subparser.add_parser("tail", help="get last output of command")
     cmd_tail.add_argument("group", type=str, help="group name")
@@ -481,8 +476,6 @@ if __name__ == "__main__":
         raise NotImplementedError()
     elif args.cmd == "tmux":
         command_tmux(args.group)
-    elif args.cmd == "stdio":
-        raise NotImplementedError()
     elif args.cmd == "tail":
         raise NotImplementedError()
     elif args.cmd == "stop":
