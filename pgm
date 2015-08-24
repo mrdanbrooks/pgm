@@ -137,41 +137,70 @@ def tail(session, name):
 
 
 
-
+class configcmd(object):
+    def __init__(self, name, command, enabled=None, sudo=None, shell=None, cmddir=None):
+        self.name = name
+        self.command = command
+        self.enabled = enabled
+        self.sudo = sudo
+        self.shell = shell
+        self.cmddir = cmddir
 
 def parse_config(conf_file):
-    """ Each section specifies one command. Options are 
-    sudo: whether or not command needs run with privlidges (default: False)
-    enabled: Whether or not this command should be run (default: True)
-    cmd: The actual command to execute
-    """
+    """ Parses config file into dictionary of configcmds"""
     config = ConfigParser.ConfigParser()
     config.readfp(open(conf_file))
+    commands = dict()
     for section in config.sections():
-        # Skip is enabled is set to False
-        if config.has_option(section, 'enabled') and config.getboolean(section, 'enabled') == False:
-            print "Skipping disabled command '%s'" % section
-            continue
+        name = section
+        if name in commands.keys():
+            raise Exception("Duplicate name entry found for '%s'" % name)
         if not config.has_option(section, 'cmd'):
             raise Exception("config file section '%s' has no 'cmd' defined" % section)
-        cmd = config.get(section, 'cmd')
-        sudocmd = False
+        command = config.get(section, 'cmd')
+        enabled = True
+        if config.has_option(section, 'enabled') and config.getboolean(section, 'enabled') == False:
+            enabled = False
+        sudo = False
         if config.has_option(section, 'sudo') and config.getboolean(section, 'sudo'):
-            cmd = "sudo " + cmd
-            sudocmd = True
-            #TODO after command is started, use the send-keys command to send the password
-        run_in_new_window(section,cmd)
+            sudo = True
+        cmddir = None
+        if config.has_option(section, 'cmddir'):
+            cmddir = config.get(section, 'cmddir')
+        shell = False
+        if config.has_option(section, 'shell') and config.getboolean(section, 'shell'):
+            shell = True
+        commands[name] = configcmd(name, command, enabled, sudo, shell, cmddir)
+    return commands
+
 
 def command_init(group_name, config=None):
     """ initializes a new pgm session in tmux """
     if tmux_has_session(group_name):
         print "Group '%s' already exists. Aborting" % group_name
         sys.exit(1)
-    run_cmd("%s new-session -s %s -d" % (TMUX, group_name))
-    run_cmd("%s set-option -t %s set-remain-on-exit on" % (TMUX, group_name))
     if config:
         print "Using config file '%s'" % config
-        parse_config(config)
+        commands = parse_config(config)
+        # see if we need sudo for anything
+        if (True, True) in [(c.sudo, c.enabled) for c in commands.values()]:
+            sudopasswd = None
+            try:
+                sudopasswd = get_sudo_password()
+            except AssertionError:
+                print "Passwords do not match. Aborting."
+                exit(1)
+
+    # Initialize Session - do this after potentially asking for password
+    run_cmd("%s new-session -s %s -d" % (TMUX, group_name))
+    run_cmd("%s set-option -t %s set-remain-on-exit on" % (TMUX, group_name))
+
+    if config:
+        for command in commands.values():
+            if not command.enabled:
+                print "Skipping disabled command '%s'" % command.name
+            else:
+                command_run(group_name, command.name, command.command, command.sudo, command.shell, command.cmddir, sudopasswd=sudopasswd)
     sys.exit(0)
 
 def command_groups():
@@ -196,7 +225,7 @@ def command_list(group_name):
     print "PGM Name\tCommand"
     print output
 
-def command_run(group_name, proc_name, command, sudo=False, shell=False, dirpath=None):
+def command_run(group_name, proc_name, command, sudo=False, shell=False, dirpath=None, sudopasswd=None):
     """ """
     # TODO: We need to make sure that windows resize aggressively, and don't automatically
     # go away when the process dies.
@@ -210,7 +239,7 @@ def command_run(group_name, proc_name, command, sudo=False, shell=False, dirpath
     # 'send-keys' command to send the password through stdin. 
     check_session_exists(group_name)
     if shell:
-        print "using shell"
+        print "Running command in shell"
 
     # Check name is not is use already
     cmd = "%s list-windows -t %s -F #{window_name}" % (TMUX, group_name)
@@ -235,7 +264,11 @@ def command_run(group_name, proc_name, command, sudo=False, shell=False, dirpath
     if dirpath:
         print "Changing directory to ", dirpath
         runpath = os.getcwd()
-        os.chdir(os.path.normpath(os.path.expanduser(dirpath)))
+        try:
+            os.chdir(os.path.normpath(os.path.expanduser(dirpath)))
+        except OSError:
+            print "Invalid directory. Aborting."
+            exit(1)
     
     # Modify the given command if we are running as sudo. -k clears the timeout. -S reads from stdin
     # Also, grab the password now so that if it is fumbled, we have not already executed the command.
@@ -243,13 +276,9 @@ def command_run(group_name, proc_name, command, sudo=False, shell=False, dirpath
         if re.match("^sudo", command, re.IGNORECASE):
             print "Please use the --sudo switch in place of including the word 'sudo' in your command"
             exit(1)
-        command = "sudo -k; sudo -S " + command
-        # Get the password for sudo
-        try:
-            passwd = get_sudo_password()
-        except AssertionError:
-            print "Passwords do not match. Aborting."
-            exit(1)
+        command = "sudo -k; sudo -p 'passwd' -S " + command
+        if not isinstance(sudopasswd,str):
+            raise Exception("Password not provided.")
 
     print "Running '%s'" % command
     # Call Command. The command needs to be sent as a single parameter so tmux receives the entire
@@ -263,7 +292,18 @@ def command_run(group_name, proc_name, command, sudo=False, shell=False, dirpath
             # some specific errors?
             return False
     else:
-        raise NotImplementedError()
+        try:
+            cmd = "%s new-window -t %s:%d -n %s" % (TMUX, group_name, index, proc_name)
+            sp.check_call(cmd.split()) 
+            cmd = "%s send-keys -t %s:%d -l" % (TMUX, group_name, index)
+            sp.check_call(cmd.split() + [command])
+            cmd = "%s send-keys -t %s:%d Enter" %(TMUX, group_name, index)
+            run_cmd(cmd)
+        except sp.CalledProcessError as e:
+            # TODO: Probably this should throw an error? Probably I should make
+            # some specific errors?
+            return False
+
 
     # Set window parameters. Specifically:
     # aggressive-resize on: This allows windows to immediately change size when unconstrained
@@ -271,17 +311,18 @@ def command_run(group_name, proc_name, command, sudo=False, shell=False, dirpath
 
     if sudo:
         # Before we can send the password, we need to make sure tmux has had a
-        # chance to execute the commands and be waiting at the prompt. This seems
-        # to do the trick... but a better way would be nice just in case the 
-        # 'sudo -k' gets run the 'sudo -S ...' has not yet.
-        cmd = "%s list-windows -t %s -F #{window_name}" % (TMUX, group_name)
-        while proc_name not in sp.check_output(cmd.split()).strip().split("\n"):
-            print "waiting"
+        # chance to execute the commands and be waiting at the prompt. 
+        timeout = 5
+        cmd = "%s capture-pane -t %s:%s -p" % (TMUX, group_name, index)
+        while timeout > 0 and not sp.check_output(cmd.split()).strip().split("\n")[-1] == "passwd":
+            timeout -= 1
+            print "waiting:", sp.check_output(cmd.split()).strip()
             time.sleep(1)
+
         # Pass the password to the sudo command. Make sure it is sent as a single parameter
         # Then, seperately send the enter key after it.
         cmd = "%s send-keys -t %s:%d -l" % (TMUX, group_name, index)
-        sp.check_call(cmd.split() + [passwd])
+        sp.check_call(cmd.split() + [sudopasswd])
         cmd = "%s send-keys -t %s:%d Enter" %(TMUX, group_name, index)
         run_cmd(cmd)
 
@@ -391,8 +432,13 @@ if __name__ == "__main__":
     cmd_connect.add_argument("process", type=str, help="process name")
 
     # TMux Command
-    cmd_tmux = cmd_subparser.add_parser("tmux", help="Connects to the pgm group in tmux")
+    cmd_tmux = cmd_subparser.add_parser("tmux", help="Connects to the pgm group as tmux session")
     cmd_tmux.add_argument("group", type=str, help="group name")
+
+    # Stdio Command
+    cmd_stdio = cmd_subparser.add_parser("stdio", help="Connects to single processes stdio")
+    cmd_stdio.add_argument("group", type=str, help="group name")
+    cmd_stdio.add_argument("process", type=str, help="process name")
 
     # Tail Command
     cmd_tail = cmd_subparser.add_parser("tail", help="get last output of command")
@@ -422,11 +468,21 @@ if __name__ == "__main__":
     elif args.cmd == "list":
         command_list(args.group)
     elif args.cmd == "add":
-        command_run(args.group, args.name, " ".join(args.command), args.sudo, args.shell, args.dir)
+        if args.sudo:
+            try:
+                sudopasswd = get_sudo_password()
+            except AssertionError:
+                print "Passwords do not match. Aborting."
+                exit(1)
+        else:
+            sudopasswd = None
+        command_run(args.group, args.name, " ".join(args.command), args.sudo, args.shell, args.dir, sudopasswd=sudopasswd)
     elif args.cmd == "connect":
         raise NotImplementedError()
     elif args.cmd == "tmux":
         command_tmux(args.group)
+    elif args.cmd == "stdio":
+        raise NotImplementedError()
     elif args.cmd == "tail":
         raise NotImplementedError()
     elif args.cmd == "stop":
