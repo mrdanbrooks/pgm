@@ -220,20 +220,26 @@ def command_groups():
         for s in output:
             print " %s" % s
 
+def tmux_list_session_windows(session_name):
+    """ Generates a list of dictionary objects containing process information for each window.
+        Returns: {ame:(str), pid:(int), running:(bool), exit_code:(str), cmd:(str)} 
+    """
+    check_session_exists(session_name)
+    fmtcmd = "#{window_name}\t#{pane_start_command}\t#{pane_pid}\t#{pane_dead}\t(#{pane_dead_status})"
+    output = sp.check_output([TMUX, 'list-windows', '-t', session_name, "-F", fmtcmd])
+    output = output.strip().split("\n")
+    output = [{"name": l[0], "cmd":l[1], "pid":int(l[2]), "running":True if l[3] == "0" else False, "exit_code":l[4]} for l in [line.split("\t") for line in output]]
+    return output
+ 
+
 def command_list(group_name):
     """ List commands from the pgm group """
-    check_session_exists(group_name)
-    fmtcmd = "#{window_name}\t#{pane_pid}\t#{pane_start_command}\t#{pane_dead}\t(#{pane_dead_status})"
-    output = sp.check_output([TMUX, 'list-windows', '-t', group_name, "-F", fmtcmd])
-    output = output.strip().split("\n")
+    output = tmux_list_session_windows(group_name)
     output = output[1:]  # Remove the first item (0) - it is always an empty shell
     print "%d Processes" % len(output)
     print "%-16s%-10s%-16s%s" % ("PGM Name", "PID", "Status", "Command")
     for line in output:
-        name, pid, cmd, running, exit_code = line.split("\t")
-        running = True if running == "0" else False
-        print "%-16s%-10s%-16s%s" % (name, pid, "Running" if running else "Exited%s" % exit_code , cmd)
-#         print "%-16s%-16s%s" % (name, running, cmd)
+        print "%-16s%-10s%-16s%s" % (line["name"], line["pid"], "Running" if line["running"] else "Exited%s" % line["exit_code"] , line["cmd"])
 
 def command_run(group_name, proc_name, command, sudo=False, shell=False, dirpath=None, sudopasswd=None):
     """ """
@@ -380,6 +386,9 @@ def command_connect(group_name, proc_name):
     exit(0)
 
 
+def command_kill(group_name, proc_name):
+    """ Kills a process """
+    check_session_exists(group_name)
 
 def command_rm(group_name, proc_name):
     """ Kills a tmux window with a process inside it """
@@ -460,10 +469,11 @@ if __name__ == "__main__":
     cmd_tail.add_argument("process", type=str, help="process name")
 
     # Stop Command
-    cmd_stop = cmd_subparser.add_parser("stop", help="stops a running process")
+    cmd_stop = cmd_subparser.add_parser("kill", help="stops a running process")
     cmd_stop.add_argument("group", type=str, help="group name")
     cmd_stop.add_argument("--name", type=str, help="command name to kill")
     cmd_stop.add_argument("--all", action="store_true", help="kills all commands")
+    cmd_stop.add_argument("-r", action="store_true", help="Removes the exited process")
 
     # RM Command
     cmd_rm = cmd_subparser.add_parser("rm", help="Removes an exited process")
