@@ -216,21 +216,24 @@ def command_groups():
         print "No groups found"
     else:
         output = output.strip().split("\n")
-        print "%d Groups:" % len(output)
+        print "%d Group(s):" % len(output)
         for s in output:
             print " %s" % s
 
 def command_list(group_name):
     """ List commands from the pgm group """
     check_session_exists(group_name)
-    fmtcmd = "#{window_name}\t#{pane_start_command}\t#{pane_dead}"
+    fmtcmd = "#{window_name}\t#{pane_pid}\t#{pane_start_command}\t#{pane_dead}\t(#{pane_dead_status})"
     output = sp.check_output([TMUX, 'list-windows', '-t', group_name, "-F", fmtcmd])
     output = output.strip().split("\n")
+    output = output[1:]  # Remove the first item (0) - it is always an empty shell
     print "%d Processes" % len(output)
-    print "%-16s%-16s%s" % ("PGM Name", "Status", "Command")
+    print "%-16s%-10s%-16s%s" % ("PGM Name", "PID", "Status", "Command")
     for line in output:
-        name, cmd, running = line.split("\t")
-        print "%-16s%-16s%s" % (name, "Running" if running else "Dead", cmd)
+        name, pid, cmd, running, exit_code = line.split("\t")
+        running = True if running == "0" else False
+        print "%-16s%-10s%-16s%s" % (name, pid, "Running" if running else "Exited%s" % exit_code , cmd)
+#         print "%-16s%-16s%s" % (name, running, cmd)
 
 def command_run(group_name, proc_name, command, sudo=False, shell=False, dirpath=None, sudopasswd=None):
     """ """
