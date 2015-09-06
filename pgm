@@ -44,7 +44,7 @@ TMUX = "tmux"
 #TODO: We should make the session that holds all the windows execute "True" or something for the 
 # index 0, and make index 0 hang around all the time so the session does not dissappear even if 
 # all the other windows in it have been removed. 
-
+#BUG: if a dead process is around for long enough, we loose its data even though we still have the window. This prevents us from making a new window correctly
 def run_cmd(cmd):
     """ Run a command and return True or False """
     try:
@@ -207,6 +207,18 @@ def command_init(group_name, config=None):
                     print e
                     print e.message
     sys.exit(0)
+
+def command_destroy(group_name, force):
+    """ destroy the tmux session """
+    check_session_exists(group_name)
+    if not force:
+        processes = tmux_list_session_windows(group_name)
+        processes = processes[1:]  # Remove the first "bash" window
+        if True in [l["running"] for l in processes]:
+            print "Group contains running processes. Aborting."
+            exit(1)
+    run_cmd("%s kill-session -t %s" % (TMUX, group_name))
+    return
 
 def command_groups():
     """ Lists all pgm tmux sessions """
@@ -386,27 +398,73 @@ def command_connect(group_name, proc_name):
     exit(0)
 
 
+def tmux_kill_proc_in_window(session_name, window_name):
+    """ Kills a window from a session """
+    cmd = "%s send-keys -t %s:%s" % (TMUX, session_name, window_name)
+    sp.check_call(cmd.split() + ["C-c"])
+    #TODO: We should confirm that the process was killed
+
 def command_kill(group_name, proc_name):
     """ Kills a process """
     check_session_exists(group_name)
+    processes = tmux_list_session_windows(group_name)
+    # Convert to dictionary for easy reading
+    processes = {l["name"]: l for l in processes}
+    if proc_name not in processes.keys():
+        print "Process '%s' not found in group '%s'" % (proc_name, group_name)
+        exit(1)
+    if not processes[proc_name]["running"]:
+        print "Process '%s' in group '%s' has already terminated." % (proc_name, group_name)
+        exit(1)
+    print "killing pid",processes[proc_name]["pid"]
+    tmux_kill_proc_in_window(group_name, proc_name)
+    return
+
+def command_kill_all(group_name):
+    """ Kills all processes in the group """
+    check_session_exists(group_name)
+    processes = tmux_list_session_windows(group_name)
+    processes = processes[1:]  # Remove the first "bash" processes
+    # Convert to dictionary for easy reading
+    for p in processes:
+        tmux_kill_proc_in_window(group_name, p["name"])
+    return
+ 
+def tmux_remove_window(session_name, window_name):
+    """ removes the window from the session """
+    cmd = "%s kill-window -t %s:%s" % (TMUX, session_name, window_name)
+    run_cmd(cmd)
 
 def command_rm(group_name, proc_name):
     """ Kills a tmux window with a process inside it """
-    # TODO: Don't allow rm of running process
     check_session_exists(group_name)
     # Get list of tmux window names and associated indexes
-    cmd = "%s list-windows -t %s -F #{window_name}^^#{window_index}" % (TMUX, group_name)
-    output = sp.check_output(cmd.split()).strip().split("\n")
-    # Turn list into dictionary of name:index
-    output = [l.split("^^") for l in output]
-    proc_indexes = {l[0]: l[1] for l in output}
-    if proc_name not in proc_indexes.keys():
+    processes = tmux_list_session_windows(group_name)
+    processes = {l["name"]: l for l in processes}
+    if proc_name not in processes.keys():
         print "Process '%s' not found in group '%s'" % (proc_name, group_name)
         exit(1)
-    cmd = "%s kill-window -t %s:%s" % (TMUX, group_name, proc_indexes[proc_name])
-    run_cmd(cmd)
+    if processes[proc_name]["running"]:
+        print "Unable to remove, process '%s' in group '%s' is still running. Please remove using pgm kill first." % (proc_name, group_name)
+        exit(1)
+    tmux_remove_window(group_name, proc_name)
     exit(0)
 
+def command_rm_all(group_name):
+    check_session_exists(group_name)
+    # Get list of tmux window names and associated indexes
+    processes = tmux_list_session_windows(group_name)
+    processes = processes[1:]  # Remove the first "bash" processes
+    skipped = False
+    for p in processes:
+        if not p["running"]:
+            tmux_remove_window(group_name, p["name"])
+        else:
+            skipped = True
+    if skipped:
+        print "Was not able to remove all processes."
+    return
+ 
 
 
 
@@ -434,6 +492,11 @@ if __name__ == "__main__":
     cmd_init = cmd_subparser.add_parser("init", help="Starts a new process group")
     cmd_init.add_argument("group", type=str, help="name of group")
     cmd_init.add_argument("--config", type=str, default=None, help="Configuration file")
+
+    # destroy command
+    cmd_destroy = cmd_subparser.add_parser("destroy", help="Destroys a process group")
+    cmd_destroy.add_argument("group", type=str, help="name of group")
+    cmd_destroy.add_argument("--force", action="store_true", help="force")
 
     # Groups command
     cmd_groups = cmd_subparser.add_parser("groups", help="Lists process groups")
@@ -468,7 +531,7 @@ if __name__ == "__main__":
     cmd_tail.add_argument("group", type=str, help="group name")
     cmd_tail.add_argument("process", type=str, help="process name")
 
-    # Stop Command
+    # Kill Command
     cmd_stop = cmd_subparser.add_parser("kill", help="stops a running process")
     cmd_stop.add_argument("group", type=str, help="group name")
     cmd_stop.add_argument("--name", type=str, help="command name to kill")
@@ -478,7 +541,9 @@ if __name__ == "__main__":
     # RM Command
     cmd_rm = cmd_subparser.add_parser("rm", help="Removes an exited process")
     cmd_rm.add_argument("group", type=str, help="group name")
-    cmd_rm.add_argument("process", type=str, help="process name")
+    cmd_rm.add_argument("--name", type=str, help="command name to kill")
+    cmd_rm.add_argument("--all", action="store_true", help="kills all commands")
+    #TODO: Make this take --name or --all (all would remove all killed processes)
 
 
     args = parser.parse_args()
@@ -487,6 +552,8 @@ if __name__ == "__main__":
   
     if args.command == 'init':
         command_init(args.group, args.config)
+    elif args.command == "destroy":
+        command_destroy(args.group, args.force)
     elif args.command == "groups":
         command_groups()
     elif args.command == "list":
@@ -517,11 +584,22 @@ if __name__ == "__main__":
         command_tmux(args.group)
     elif args.command == "tail":
         raise NotImplementedError()
-    elif args.command == "stop":
-        raise NotImplementedError()
+    elif args.command == "kill":
+        if args.name:
+            command_kill(args.group, args.name)
+            if args.r:
+                command_rm(args.group, args.name)
+        elif args.all:
+            command_kill_all(args.group)
+            if args.r:
+                command_rm_all(args.group)
     elif args.command == "rm":
-        command_rm(args.group, args.process)
-
+        if args.name:
+            command_rm(args.group, args.name)
+        elif args.all:
+            command_rm_all(args.group)
+    else:
+        raise Exception("Command '%s' is not defined!" % args.command)
     sys.exit(0)
 
 
