@@ -43,30 +43,30 @@ Show latest output of a process
 	/dev/sda1       209G  136G   63G  69% /
 
 Kill a process (Ctrl-c) Note: does not remove the process output from pgm
-	$ pgm stop mine --name top
+	$ pgm kill mine --name top
 	Sending Ctrl-c (SIGINT) to process 'top' in session 'mine'
 
 Kill a process (Ctrl-c) and remove it
-	$ pgm stop mine -r --name top
+	$ pgm kill mine -r --name top
 	Sending Ctrl-c (SIGINT) to process 'top' in session 'mine'
 	Removing 'top' from session 'mine
 
 Kill all processes (Ctrl-c)
-    $ pgm stop mine --all
+    $ pgm kill mine --all
 
 Kill a process (Ctrl-d)
-	$ pgm stop mine -d --name top
+	$ pgm kill mine -d --name top
 	Sending Ctrl-d (EOF) to process 'top' in session 'mine'
 
 Kill a process (Ctrl-\)
-	$ pgm stop mine -q --name top
+	$ pgm kill mine -q --name top
 	Sending Ctrl-\ (SIGQUIT) to process 'top' in session 'mine'
 
 Kill a process
-	$ pgm stop mine -9 --name top
+	$ pgm kill mine -9 --name top
 	Sending SIGINT to process 'top' in session 'mine'
 
 Remove an exited process (only works on exited processes)
-	$ pgm rm mine top
+	$ pgm rm mine --name top
 	Removing 'top' from session 'mine'
 

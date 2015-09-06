@@ -78,50 +78,39 @@ def get_sudo_password():
     return passwd
 
 
+# def list_running(session):
+#     """ deprecated: left here as an exmaple for now """
+#     fmtcmd = "#{window_index}\t#{window_name}\t#{pane_index}\t#{pane_pid}\t#{pane_start_command}"
+#     output = sp.check_output([TMUX, 'list-windows', '-t', session, "-F", fmtcmd])
+#     lines = output.split('\n')
+#     for line in lines:
+#         print line.split('\t')
 
-
-# def start_session(session_name):
-#     run_cmd("%s new-session -s %s -d" % (TMUX, session_name))
-#     run_cmd("%s set-option -t %s set-remain-on-exit on" % (TMUX, session_name))
- 
-def end_session(session_name):
-    return run_cmd("%s kill-session -t %s" % (TMUX, session_name))
-    
-
-
-def list_running(session):
-    """ deprecated: left here as an exmaple for now """
-    fmtcmd = "#{window_index}\t#{window_name}\t#{pane_index}\t#{pane_pid}\t#{pane_start_command}"
-    output = sp.check_output([TMUX, 'list-windows', '-t', session, "-F", fmtcmd])
-    lines = output.split('\n')
-    for line in lines:
-        print line.split('\t')
-
-def __get_processes(session):
-    """ Returns list of tuples (name, cmd, pid) """
-    fmtcmd = "#{window_name}\t#{pane_start_command}\t#{pane_pid}"
-    output = sp.check_output([TMUX, 'list-windows', '-t', session, "-F", fmtcmd])
-    processes = [lines.split('\t') for lines in output.split('\n')]
-    return {x[0]:x[1:] for x in processes}
+# def __get_processes(session):
+#     """ Returns list of tuples (name, cmd, pid) """
+#     fmtcmd = "#{window_name}\t#{pane_start_command}\t#{pane_pid}"
+#     output = sp.check_output([TMUX, 'list-windows', '-t', session, "-F", fmtcmd])
+#     processes = [lines.split('\t') for lines in output.split('\n')]
+#     return {x[0]:x[1:] for x in processes}
         
-def kill_process(session, name):
-    processes = __get_processes(session)
-    if name not in processes.keys():
-        print "'%s' not found in session '%s'" % (name, session)
-        sys.exit(1)
-    try:
-        print "Killing Process"
-        sp.check_call(['kill',processes[name][1]])
-    except sp.CalledProcessError as e:
-        if e.returncode == 1: 
-            print "Unable to kill process: Already Terminated. Continuing"
-        else:
-            raise e
-    try:
-        print "Killing Window"
-        sp.check_call([TMUX, 'killw', '-t', name])
-    except sp.CalledProcessError as e:
-        raise e
+# def kill_process(session, name):
+#     processes = __get_processes(session)
+#     if name not in processes.keys():
+#         print "'%s' not found in session '%s'" % (name, session)
+#         sys.exit(1)
+#     try:
+#         print "Killing Process"
+#         sp.check_call(['kill',processes[name][1]])
+#     except sp.CalledProcessError as e:
+#         if e.returncode == 1: 
+#             print "Unable to kill process: Already Terminated. Continuing"
+#         else:
+#             raise e
+#     try:
+#         print "Killing Window"
+#         sp.check_call([TMUX, 'killw', '-t', name])
+#     except sp.CalledProcessError as e:
+#         raise e
 
 def tail(session, name):
     processes = __get_processes(session)
@@ -543,11 +532,8 @@ if __name__ == "__main__":
     cmd_rm.add_argument("group", type=str, help="group name")
     cmd_rm.add_argument("--name", type=str, help="command name to kill")
     cmd_rm.add_argument("--all", action="store_true", help="kills all commands")
-    #TODO: Make this take --name or --all (all would remove all killed processes)
-
 
     args = parser.parse_args()
-#     session_exists = tmux_has_session(args.session)
 
   
     if args.command == 'init':
