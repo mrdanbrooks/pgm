@@ -244,9 +244,6 @@ def command_list(group_name):
 
 def command_run(group_name, proc_name, command, sudo=False, shell=False, dirpath=None, sudopasswd=None):
     """ """
-    # TODO: We need to make sure that windows resize aggressively, and don't automatically
-    # go away when the process dies.
-
     # SUDO: We will manually append the sudo command to the command the user passed in.
     # This is necessary as the normal 'sudo' is not really sufficient to reliably 
     # run the command. First, normally sudo has a timeout period during which you
@@ -364,6 +361,18 @@ def command_tmux(group_name):
         sp.call(cmd.split())
     exit(0)
 
+def command_tail(group_name, proc_name):
+    """ Captures the latest output from the processes """
+    #TODO: This captures the pane at the width it was last displayed (or default 80)
+    check_session_exists(group_name)
+    # Capture size of the current terminal
+    term_size = sp.check_output(["stty","size"]).strip().split(" ")
+    print term_size
+    cmd = "%s capture-pane -t %s:%s -p" % (TMUX, group_name,  proc_name)
+    output = sp.check_output(cmd.split())
+    print output
+
+
 
 def command_connect(group_name, proc_name):
     """ Creates a tmux session connected to a single process """
@@ -425,7 +434,7 @@ def tmux_remove_window(session_name, window_name):
     run_cmd(cmd)
 
 def command_rm(group_name, proc_name):
-    """ Kills a tmux window with a process inside it """
+    """ sends a kill signal to a process """
     check_session_exists(group_name)
     # Get list of tmux window names and associated indexes
     processes = tmux_list_session_windows(group_name)
@@ -440,6 +449,7 @@ def command_rm(group_name, proc_name):
     exit(0)
 
 def command_rm_all(group_name):
+    """ sends a kill signal to all processes """
     check_session_exists(group_name)
     # Get list of tmux window names and associated indexes
     processes = tmux_list_session_windows(group_name)
@@ -569,7 +579,7 @@ if __name__ == "__main__":
     elif args.command == "tmux":
         command_tmux(args.group)
     elif args.command == "tail":
-        raise NotImplementedError()
+        command_tail(args.group, args.process)
     elif args.command == "kill":
         if args.name:
             command_kill(args.group, args.name)
@@ -587,30 +597,3 @@ if __name__ == "__main__":
     else:
         raise Exception("Command '%s' is not defined!" % args.command)
     sys.exit(0)
-
-
-    # Original Pman code
-    if args.cmd == "init" and session_exists:
-        print "Session '%s' already exists. Aborting" % args.session
-        sys.exit(1)
-    elif args.cmd == "init" and not session_exists:
-        start_session(args.session)
-        if args.config:
-            print "Using config file '%s'" % args.config
-            parse_config(args.config)
-        sys.exit(0)
-    elif not session_exists:
-        print "Session '%s' does not exist. Run 'init' first to create it." % args.session
-        sys.exit(2)
-    if args.cmd == "run":
-        run_in_new_window(args.command.split()[0], args.command)
-        sys.exit(0)
-    elif args.cmd == "list":
-        list_processes(args.session)
-        sys.exit(0)
-    elif args.cmd == "kill":
-        if args.name:
-            kill_process(args.session, args.name)
-    elif args.cmd == "tail":
-        if args.name:
-            tail(args.session, args.name)
