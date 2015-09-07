@@ -487,6 +487,7 @@ if __name__ == "__main__":
     cmd_add.add_argument("--sudo", action="store_true", help="run the process as sudo")
     cmd_add.add_argument("--dir", type=str, default=None, help="directory path from which to execute the command")
     cmd_add.add_argument("--shell", action="store_true", help="run the command in a shell")
+    cmd_add.add_argument("--connect", action="store_true", help="after running command, connect to it")
     cmd_add.add_argument("--config", type=str, help="Find command in specified config file")
     cmd_add.add_argument("--cmd", type=str, nargs=argparse.REMAINDER, help="command to run")
 
@@ -541,6 +542,13 @@ if __name__ == "__main__":
             _sudo = c.sudo
             _shell = c.shell
             _cmddir = c.cmddir
+            # override values if command line args specified
+            if args.sudo:
+                _sudo = args.sudo
+            if args.shell:
+                _shell = args.shell
+            if args.dir:
+                _cmddir = args.dir
         elif args.cmd and not args.config:
             _cmd = " ".join(args.cmd)
             _sudo = args.sudo
@@ -549,7 +557,6 @@ if __name__ == "__main__":
         else:
             cmd_add.print_help()
             exit(1)
-
         if _sudo:
             try:
                 sudopasswd = get_sudo_password()
@@ -559,6 +566,8 @@ if __name__ == "__main__":
         else:
             sudopasswd = None
         command_run(_group, _name, _cmd, _sudo, _shell, _cmddir, sudopasswd)
+        if args.connect:
+            command_connect(_group, _name)
     elif args.command == "connect":
         command_connect(args.group, args.process)
     elif args.command == "tmux":
