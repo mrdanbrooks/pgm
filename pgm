@@ -77,55 +77,6 @@ def get_sudo_password():
         raise AssertionError()
     return passwd
 
-
-# def list_running(session):
-#     """ deprecated: left here as an exmaple for now """
-#     fmtcmd = "#{window_index}\t#{window_name}\t#{pane_index}\t#{pane_pid}\t#{pane_start_command}"
-#     output = sp.check_output([TMUX, 'list-windows', '-t', session, "-F", fmtcmd])
-#     lines = output.split('\n')
-#     for line in lines:
-#         print line.split('\t')
-
-# def __get_processes(session):
-#     """ Returns list of tuples (name, cmd, pid) """
-#     fmtcmd = "#{window_name}\t#{pane_start_command}\t#{pane_pid}"
-#     output = sp.check_output([TMUX, 'list-windows', '-t', session, "-F", fmtcmd])
-#     processes = [lines.split('\t') for lines in output.split('\n')]
-#     return {x[0]:x[1:] for x in processes}
-        
-# def kill_process(session, name):
-#     processes = __get_processes(session)
-#     if name not in processes.keys():
-#         print "'%s' not found in session '%s'" % (name, session)
-#         sys.exit(1)
-#     try:
-#         print "Killing Process"
-#         sp.check_call(['kill',processes[name][1]])
-#     except sp.CalledProcessError as e:
-#         if e.returncode == 1: 
-#             print "Unable to kill process: Already Terminated. Continuing"
-#         else:
-#             raise e
-#     try:
-#         print "Killing Window"
-#         sp.check_call([TMUX, 'killw', '-t', name])
-#     except sp.CalledProcessError as e:
-#         raise e
-
-def tail(session, name):
-    processes = __get_processes(session)
-    if name not in processes.keys():
-        print "'%s' not found in session '%s'" % (name, session)
-        sys.exit(1)
-    # TODO: This does not seem to work properly. We want to figure out how to specify a set amount 
-    # to feed back. Right now it uses whatever the last client has set it to.
-#         sp.check_call([TMUX, 'resize-pane', '-t', "%s:%s" % (session, name), '-x', '120', '-y', '50'
-    output = sp.check_output([TMUX, 'capture-pane', '-t', "%s:%s" % (session, name), '-p'])
-    print output
-
-
-
-
 class configcmd(object):
     def __init__(self, name, command, enabled=None, sudo=None, shell=None, cmddir=None):
         self.name = name
