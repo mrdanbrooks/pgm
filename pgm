@@ -112,8 +112,8 @@ def parse_config(conf_file):
         if config.has_option(section, 'sudo') and config.getboolean(section, 'sudo'):
             sudo = True
         cmddir = None
-        if config.has_option(section, 'cmddir'):
-            cmddir = config.get(section, 'cmddir')
+        if config.has_option(section, 'dir'):
+            cmddir = config.get(section, 'dir')
         shell = False
         if config.has_option(section, 'shell') and config.getboolean(section, 'shell'):
             shell = True
