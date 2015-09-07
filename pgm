@@ -46,6 +46,7 @@ import time
 
 
 TMUX = "tmux"
+TMUX_VERSION = 1.9
 
 #BUG: if a dead process is around for long enough, we loose its data even though we still have the window. This prevents us from making a new window correctly
 def run_cmd(cmd):
@@ -433,8 +434,8 @@ def check_for_tmux(tmux_cmd):
     try:
         output = sp.check_output([tmux_cmd, '-V']).strip()
         version = re.match("^tmux\s(\d+\.\d+)\w*$", output).groups()[0]
-        if float(version) < 2.0:
-            print "Error: Requires tmux 2.0 or better"
+        if float(version) < TMUX_VERSION:
+            print "Error: Requires tmux %s or better" % TMUX_VERSION
             exit(2)
     except OSError as e:
         print "'%s' is either not installed, or is not on the path. Please install tmux." % tmux_cmd
