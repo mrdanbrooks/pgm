@@ -92,7 +92,11 @@ class configcmd(object):
 def parse_config(conf_file):
     """ Parses config file into dictionary of configcmds"""
     config = ConfigParser.ConfigParser()
-    config.readfp(open(conf_file))
+    try:
+        config.readfp(open(conf_file))
+    except IOError as e:
+        print e
+        exit(1)
     commands = dict()
     for section in config.sections():
         name = section
