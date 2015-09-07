@@ -309,7 +309,6 @@ def command_run(group_name, proc_name, command, sudo=False, shell=False, dirpath
         run_cmd(cmd)
 
     if dirpath:
-        print "Changing dir back to ", runpath
         os.chdir(runpath)
 
     return True
