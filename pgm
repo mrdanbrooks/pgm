@@ -431,7 +431,11 @@ def check_for_tmux(tmux_cmd):
     exit early if it is not found. Will raise an exception if the command 
     returns an error. """
     try:
-        sp.check_call([tmux_cmd, '-V'], stdout=open('/dev/null'))
+        output = sp.check_output([tmux_cmd, '-V']).strip()
+        version = re.match("^tmux\s(\d+\.\d+)\w*$", output).groups()[0]
+        if float(version) < 2.0:
+            print "Error: Requires tmux 2.0 or better"
+            exit(2)
     except OSError as e:
         print "'%s' is either not installed, or is not on the path. Please install tmux." % tmux_cmd
         sys.exit(1)
