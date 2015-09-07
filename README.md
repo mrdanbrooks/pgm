@@ -1,4 +1,14 @@
-# pgm
+# pgm - Process Group Manager
+pgm is a tool used for managing groups of processes. 
+Groups of processes can be started and stopped together.
+Individual processes are started in the background, but can be connected to later.
+When processes stop running, their output remains available for debugging until the
+processes is 'removed'.
+
+## Dependencies
+PGM currently uses tmux sessions to manage processes.
+
+## Example:
 
 Initialize a process group named 'mine'
 
