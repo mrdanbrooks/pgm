@@ -68,11 +68,32 @@ def tmux_has_session(session_name):
     except sp.CalledProcessError as e:
             return False
 
+def tmux_list_session_windows(session_name):
+    """ Generates a list of dictionary objects containing process information for each window.
+        Returns: {ame:(str), pid:(int), running:(bool), exit_code:(str), cmd:(str)} 
+    """
+    check_session_exists(session_name)
+    fmtcmd = "#{window_name}\t#{pane_start_command}\t#{pane_pid}\t#{pane_dead}\t(#{pane_dead_status})"
+    output = sp.check_output([TMUX, 'list-windows', '-t', session_name, "-F", fmtcmd])
+    output = output.strip().split("\n")
+    output = [{"name": l[0], "cmd":l[1], "pid":int(l[2]), "running":True if l[3] == "0" else False, "exit_code":l[4]} for l in [line.split("\t") for line in output]]
+    return output
+ 
+
 def check_session_exists(session_name):
     """ Checks to make sure session exists, otherwise exits """
     if not tmux_has_session(session_name):
         print "Session '%s' does not exist. Run 'init' first to create it." % session_name
         sys.exit(2)
+
+def check_window_exists(session_name, window_name):
+    """ Checks that the window name exists in the session """
+    processes = tmux_list_session_windows(session_name)
+    processes = [p["name"] for p in processes]
+    if window_name not in processes:
+        print "Process '%s' not found in group '%s'" % (window_name, session_name)
+        exit(1)
+
 
 def get_sudo_password():
     """ Asks for the user password. Twice. Throws exception if they don't match. """
@@ -179,18 +200,6 @@ def command_groups():
         print "%d Group(s):" % len(output)
         for s in output:
             print " %s" % s
-
-def tmux_list_session_windows(session_name):
-    """ Generates a list of dictionary objects containing process information for each window.
-        Returns: {ame:(str), pid:(int), running:(bool), exit_code:(str), cmd:(str)} 
-    """
-    check_session_exists(session_name)
-    fmtcmd = "#{window_name}\t#{pane_start_command}\t#{pane_pid}\t#{pane_dead}\t(#{pane_dead_status})"
-    output = sp.check_output([TMUX, 'list-windows', '-t', session_name, "-F", fmtcmd])
-    output = output.strip().split("\n")
-    output = [{"name": l[0], "cmd":l[1], "pid":int(l[2]), "running":True if l[3] == "0" else False, "exit_code":l[4]} for l in [line.split("\t") for line in output]]
-    return output
- 
 
 def command_list(group_name):
     """ List commands from the pgm group """
@@ -336,6 +345,7 @@ def command_tail(group_name, proc_name):
 def command_connect(group_name, proc_name):
     """ Creates a tmux session connected to a single process """
     check_session_exists(group_name)
+    check_window_exists(group_name, proc_name)
     # We first create a new background tmux session with a default window.
     # Next we link the target process window to the established default window,
     # killing it in the process. Finally, we remove the status bar so it looks good.
