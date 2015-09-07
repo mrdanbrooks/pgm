@@ -1,4 +1,18 @@
 #!/usr/bin/env python
+#   Copyright 2015 Dan Brooks
+#
+#   Licensed under the Apache License, Version 2.0 (the "License");
+#   you may not use this file except in compliance with the License.
+#   You may obtain a copy of the License at
+#
+#       http://www.apache.org/licenses/LICENSE-2.0
+#
+#   Unless required by applicable law or agreed to in writing, software
+#   distributed under the License is distributed on an "AS IS" BASIS,
+#   WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+#   See the License for the specific language governing permissions and
+#   limitations under the License.
+
 """ pgm - process group manager
 
 pgm is used for managing simple groups of processes. Groups of processeses can 
@@ -9,25 +23,17 @@ processes is 'closed' using pgm. Processes are managed inside tmux sessions.
 
 For command examples, see README.
 
-
-Important TODO:
-    'pgm tmux' / 'pgm connect' should create a new session linked to the windows
-    of the pgm group session so that windows can be looked at without influencing
-    other pgm commands. We should probably be using link-windows for connect
-    and linked sessions for tmux?
-    http://unix.stackexchange.com/q/24274
-
-    See if we can prevent session windows from influening other sizes
 Features Wishlist:
-    Allow the setting of shell variables?
-    Make Config files more useful by allowing them to be used to add commands
-     - pgm init mygroup --config mygroup.ini
-     - pgm add mygroup testproc --config mygroup.ini (gets definition from mygroup.ini)
-    Rebrand pgm 'sessions' as 'groups'
-    prefix pgm sessions with 'pgm-' to seperate them from regular tmux sessions
-    add an "order" value to help order the launching of processes from config files
-    Make python script equally useful as a library api
+    - list group resource (cpu+mem) usage (both individual and total) 
+    - Allow the setting of shell variables?
+    - prefix pgm sessions with 'pgm-' to seperate them from regular tmux sessions
+    - add an "order" value to help order the launching of processes from config files
+    - Make python script equally useful as a library api
 """
+__author__ = "Dan Brooks"
+__copyright__ = "Copyright 2015, Dan Brooks"
+__email__ = "mrdanbrooks@gmail.com"
+__license__ = "Apache License v2.0"
 import subprocess as sp
 import argparse
 import os
@@ -41,9 +47,6 @@ import time
 
 TMUX = "tmux"
 
-#TODO: We should make the session that holds all the windows execute "True" or something for the 
-# index 0, and make index 0 hang around all the time so the session does not dissappear even if 
-# all the other windows in it have been removed. 
 #BUG: if a dead process is around for long enough, we loose its data even though we still have the window. This prevents us from making a new window correctly
 def run_cmd(cmd):
     """ Run a command and return True or False """
@@ -331,6 +334,7 @@ def command_connect(group_name, proc_name):
     # We first create a new background tmux session with a default window.
     # Next we link the target process window to the established default window,
     # killing it in the process. Finally, we remove the status bar so it looks good.
+    # http://unix.stackexchange.com/q/24274
     tmp_session_name = uuid.uuid4()
     run_cmd("%s new-session -s %s -d" % (TMUX, tmp_session_name))
     run_cmd("%s link-window -s %s:%s -t %s:0 -k" % (TMUX, group_name, proc_name, tmp_session_name))
