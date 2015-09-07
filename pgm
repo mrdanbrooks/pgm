@@ -510,7 +510,28 @@ if __name__ == "__main__":
     elif args.command == "list":
         command_list(args.group)
     elif args.command == "add":
-        if args.sudo:
+        _group = args.group
+        _name = args.name
+        if args.config and not args.cmd:
+            command_list = parse_config(args.config)
+            if args.name not in command_list.keys():
+                print "Command '%s' not found in config file" % args.name
+                exit(1)
+            c = command_list[args.name]
+            _cmd = c.command
+            _sudo = c.sudo
+            _shell = c.shell
+            _cmddir = c.cmddir
+        elif args.cmd and not args.config:
+            _cmd = " ".join(args.cmd)
+            _sudo = args.sudo
+            _shell = args.shell
+            _cmddir = args.dir
+        else:
+            cmd_add.print_help()
+            exit(1)
+
+        if _sudo:
             try:
                 sudopasswd = get_sudo_password()
             except AssertionError:
@@ -518,17 +539,7 @@ if __name__ == "__main__":
                 exit(1)
         else:
             sudopasswd = None
-        if args.config and not args.cmd:
-            command_list = parse_config(args.config)
-            if args.name not in command_list.keys():
-                print "Command '%s' not found in config file" % args.name
-                exit(1)
-            c = command_list[args.name]
-            command_run(args.group, args.name, c.command, c.sudo, c.shell, c.cmddir, sudopasswd)
-        elif args.cmd and not args.config:
-            command_run(args.group, args.name, " ".join(args.cmd), args.sudo, args.shell, args.dir, sudopasswd=sudopasswd)
-        else:
-            cmd_add.print_help()
+        command_run(_group, _name, _cmd, _sudo, _shell, _cmddir, sudopasswd)
     elif args.command == "connect":
         command_connect(args.group, args.process)
     elif args.command == "tmux":
