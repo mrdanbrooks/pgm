@@ -97,6 +97,9 @@ def check_window_exists(session_name, window_name):
 
 def get_sudo_password():
     """ Asks for the user password. Twice. Throws exception if they don't match. """
+    # Don't ask for the password if you are already root
+    if getpass.getuser() == "root":
+        return None
     passwd = getpass.getpass()
     if not passwd == getpass.getpass(prompt="Confirm:"):
         raise AssertionError()
@@ -254,10 +257,10 @@ def command_run(group_name, proc_name, command, sudo=False, shell=False, dirpath
     
     # Modify the given command if we are running as sudo. -k clears the timeout. -S reads from stdin
     # Also, grab the password now so that if it is fumbled, we have not already executed the command.
-    if sudo:
-        if re.match("^sudo", command, re.IGNORECASE):
-            print "Please use the --sudo switch in place of including the word 'sudo' in your command"
-            exit(1)
+    if re.match("^sudo", command, re.IGNORECASE):
+        print "Please use the --sudo switch in place of including the word 'sudo' in your command"
+        exit(1)
+    if sudo and not getpass.getuser() == "root":
         command = "sudo -k; sudo -p 'passwd' -S " + command
         if not isinstance(sudopasswd,str):
             raise Exception("Password not provided.")
@@ -291,7 +294,7 @@ def command_run(group_name, proc_name, command, sudo=False, shell=False, dirpath
     # aggressive-resize on: This allows windows to immediately change size when unconstrained
     run_cmd("%s setw -t %s:%d -g aggressive-resize on" % (TMUX, group_name, index))
 
-    if sudo:
+    if sudo and not getpass.getuser() == "root":
         # Before we can send the password, we need to make sure tmux has had a
         # chance to execute the commands and be waiting at the prompt. 
         timeout = 5
